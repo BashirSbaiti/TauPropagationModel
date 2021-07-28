@@ -3,6 +3,8 @@ from neuron import h, rxd
 from neuron.units import ms, mV
 import matplotlib.pyplot as plt
 import pprint
+import network
+import networkx as nx
 
 rxd.options.enable.extracellular = True
 rxd.nthread(4)
@@ -12,6 +14,7 @@ h.load_file("import3d.hoc")
 
 
 class Cell:
+    # TODO: add tau concentration instance var
     def __init__(self, filename, x, y, z, theta):
         if filename=="b&s":
             self._setup_morphology()
@@ -118,8 +121,8 @@ def connectCells(matrix, cells, verbose=False):
         connectTo = [tgti for tgti, x in enumerate(matrix[i]) if x == 1]
         for index in connectTo:
             tgt = cells[index]
-            nc = h.NetCon(cell.soma(0.8)._ref_v, tgt.syn)
-            print(f"{nc} has originates cell {nc.precell()} and targets cell {nc.postcell()}")
+            nc = h.NetCon(cell.soma(0.8)._ref_v, tgt.syn, sec=cell.soma)
+            #print(f"{nc} has originates cell {nc.precell()} and targets cell {nc.postcell()}")
             nc.weight[0] = .05
             nc.delay = 5
             ncs[i][index] = nc
@@ -143,19 +146,19 @@ def showStruc():
     input()
 
 
-matrix = [[0, 1, 1, 0, 0, 0],
-          [0, 0, 0, 0, 0, 0],
-          [0, 0, 0, 0, 0, 0],
-          [0, 0, 0, 0, 0, 0],
-          [0, 0, 0, 0, 0, 0],
-          [0, 0, 0, 0, 0, 0]]
+#net = network.small_world(50, 2, 0)
+net = network.scale_free(25, 2)
+network.visualize_network(net)
+plt.show()
+matrix = nx.to_numpy_array(net)
+print(np.sum(matrix))
 cells = createCells(matrix, r=600)
 netcons = connectCells(matrix, cells)
 #showStruc()
 n = len(matrix)
 
 stim = h.NetStim()
-syn = h.ExpSyn(cells[0].dend(0.8))
+syn = h.ExpSyn(cells[12].dend(0.8))
 stim.number = 5
 stim.start = 9
 
@@ -176,7 +179,7 @@ spikeTimeVecs = np.zeros((n, n), dtype=object)
 for fro in range(n):
     for to in range(n):
         spikeTimeVecs[fro, to] = h.Vector()
-        if(netcons[fro, to] != 0):
+        if netcons[fro, to] != 0:
             netcons[fro, to].record(spikeTimeVecs[fro, to])
 
 # for incNeuron in range(n):
@@ -192,7 +195,7 @@ pprint.pprint(netcons)
 # print(spk_times)
 
 h.finitialize(-65 * mV)
-h.continuerun(100 * ms)
+h.continuerun(300 * ms)
 incspk_counts = [0] * n
 
 # for incNeuron in range(n):
@@ -210,7 +213,10 @@ fig, ax = plt.subplots()
 
 for fro in range(n):
     for i, spike_times_vec in enumerate(spikeTimeVecs[fro]):
-        plt.vlines(list(spike_times_vec), fro-.5, fro + .5)
+        #plt.vlines(list(spike_times_vec), fro-.5, fro + .5)
+        X = list(spike_times_vec)
+        Y = fro*np.ones_like(X)
+        ax.scatter(X, Y, color='k')
         #print(list(spike_times_vec), "from", fro, "to",i)
 plt.show(block=False)
 
