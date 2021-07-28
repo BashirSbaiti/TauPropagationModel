@@ -28,8 +28,8 @@ class Cell:
         h.define_shape()
         self._rotate_z(theta)
         self._set_position(x, y, z)
-        # for sec in self.all:
-        #     sec.nseg = 1 + 10 * int(sec.L / 5)
+        for sec in self.all:
+            sec.nseg = 1 + 10 * int(sec.L / 5)
 
         for sec in self.all:
             sec.Ra = 100  # Axial resistance in Ohm * cm
@@ -118,8 +118,8 @@ def connectCells(matrix, cells, verbose=False):
         connectTo = [tgti for tgti, x in enumerate(matrix[i]) if x == 1]
         for index in connectTo:
             tgt = cells[index]
-            nc = h.NetCon(cell.soma(0.5)._ref_v, tgt.syn, sec=cell.soma)
-            #print(f"{nc} has originates cell {i} and targets cell {index}")
+            nc = h.NetCon(cell.soma(0.8)._ref_v, tgt.syn)
+            print(f"{nc} has originates cell {nc.precell()} and targets cell {nc.postcell()}")
             nc.weight[0] = .05
             nc.delay = 5
             ncs[i][index] = nc
@@ -143,12 +143,12 @@ def showStruc():
     input()
 
 
-matrix = [[0, 1, 1, 0, 1, 1],
-          [1, 0, 1, 1, 0, 1],
-          [1, 1, 0, 1, 1, 0],
-          [0, 1, 1, 0, 1, 1],
-          [1, 0, 1, 1, 0, 1],
-          [1, 1, 0, 1, 1, 0]]
+matrix = [[0, 1, 1, 0, 0, 0],
+          [0, 0, 0, 0, 0, 0],
+          [0, 0, 0, 0, 0, 0],
+          [0, 0, 0, 0, 0, 0],
+          [0, 0, 0, 0, 0, 0],
+          [0, 0, 0, 0, 0, 0]]
 cells = createCells(matrix, r=600)
 netcons = connectCells(matrix, cells)
 #showStruc()
@@ -206,7 +206,13 @@ for fro in range(n):
     for to in range(n):
         pprint.pprint(f"from {fro} to {to} : {list(spikeTimeVecs[fro, to])}")
 
-print(incspk_counts)
+fig, ax = plt.subplots()
+
+for fro in range(n):
+    for i, spike_times_vec in enumerate(spikeTimeVecs[fro]):
+        plt.vlines(list(spike_times_vec), fro-.5, fro + .5)
+        #print(list(spike_times_vec), "from", fro, "to",i)
+plt.show(block=False)
 
 plt.figure()
 plt.plot(t, v0, label='cell0')
