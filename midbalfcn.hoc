@@ -1,0 +1,17 @@
+objref p
+
+p = new PythonObject()
+
+proc midbal() {local wt, thisstep
+	wt = startsw()	// Get current time
+	if (t>0) {
+		thisstep = wt - walltime	// Calculate the real time taken by the most
+
+		if (p.usepar==0 || p.pc.id==0) { printf("%g ms interval at t=%g ms was %g s\n", StepBy, t, thisstep) }
+	}
+	
+	walltime = wt
+	
+	// Set the function to run again after a set amount of simulation time has passed
+	cvode.event(t+StepBy, "midbal()")
+}
