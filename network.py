@@ -7,7 +7,7 @@ Created on Wed Jul 28 14:36:25 2021
 """
 
 import networkx as nx
-# import numpy as np
+import numpy as np
 import matplotlib.pyplot as plt
 # from pprint import pprint
 
@@ -17,7 +17,7 @@ G = nx.DiGraph()
 def small_world(N, K, P):
     """ generates random small world network
     """
-    G = nx.watts_strogatz_graph(n = N, k = K, p = P)
+    G = nx.connected_watts_strogatz_graph(n = N, k = K, p = P)
     return G
 
 # random scale free network
@@ -39,5 +39,35 @@ def visualize_network(G):
     plt.imshow(N, cmap='gray')
     
 if __name__ == "__main__":
-    G = small_world(500, 10, .13)
-    visualize_network(G)
+    n = 500 # 1000
+    k = 16 # 20
+    
+    Pvals = np.linspace(0,1,100)
+    clusts = np.zeros_like(Pvals)
+    pathlens = np.zeros_like(Pvals)
+    for i, p, in enumerate(Pvals):
+        net = small_world(N = n,K = k,P = p)
+        clusts[i] = nx.average_clustering(net) # edit
+        pathlens[i] = nx.average_shortest_path_length(net)
+    
+    fig, ax = plt.subplots()
+    plt.title('Small world: n = {}, k = {}'.format(n,k))
+    plt.xlabel('p-values')
+    ax.scatter(Pvals, clusts, color='black', label='clustering coeff.')
+    ax.scatter(Pvals, pathlens, color='red', label='avg. path length')
+    ax.legend()
+    
+    Mvals = np.array(range(1,n))
+    for i, m, in enumerate(Mvals):
+        net = scale_free(N = n,M = m)
+        clusts[i] = nx.average_clustering(net) # edit
+        pathlens[i] = nx.average_shortest_path_length(net)
+    
+    fig, ax = plt.subplots()
+    plt.title('Scale free: n = {}'.format(n))
+    plt.xlabel('m-values')
+    ax.scatter(Mvals, clusts, color='black', label='clustering coeff.')
+    ax.scatter(Mvals, pathlens, color='red', label='avg. path length')
+    ax.legend()
+    # G = small_world(500, 10, .13)
+    # visualize_network(G)
