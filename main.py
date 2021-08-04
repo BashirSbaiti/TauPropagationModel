@@ -1,8 +1,11 @@
+import random
+
 import numpy as np
 from neuron import h
 from neuron.units import ms, mV
 import matplotlib.pyplot as plt
 import pprint
+import os
 from scipy.special import expit
 import network
 import random as rand
@@ -124,10 +127,12 @@ def createCells(matrix, r):
     return cells
 
 
-def connectCells(matrix, cells, verbose=False):
+def connectCells(matrix, cells, inhFrac=0.0, verbose=False):
     """:returns adj matrix of netcons, [from][to]"""
     n = len(matrix)
     ncs = np.zeros((n, n), dtype=object)
+    numInhCells = int(inhFrac * n)
+    inhCellIndxs = random.sample(range(0, n), numInhCells)
     for i, cell in enumerate(cells):
         connectTo = [tgti for tgti, x in enumerate(matrix[i]) if x == 1]
         for index in connectTo:
@@ -135,259 +140,323 @@ def connectCells(matrix, cells, verbose=False):
             nc = h.NetCon(cell.soma(0.8)._ref_v, tgt.syn, sec=cell.soma) if type(cell.soma) is not list else h.NetCon(
                 cell.soma[0](0.8)._ref_v, tgt.syn, sec=cell.soma[0])
             # print(f"{nc} has originates cell {nc.precell()} and targets cell {nc.postcell()}")
-            nc.weight[0] = .05
+            nc.weight[0] = .05 if i not in inhCellIndxs else -0.05
             nc.delay = 5
             ncs[i][index] = nc
             if verbose:
-                print(f"Connected cell {i} to cell {index}.")
+                print(f"Connected cell {i} to cell {index} with a connection weight of {nc.weight[0]}")
     return ncs
 
 
-def showStruc():
-    ps = h.PlotShape(True)
-    ps.show(0)
-    input()
+onTheBooks = True
+
+# network parameters
+nn = 1000
+kn = 20
+pn = .05
+inhFrac = 0.15
+
+# time control
+timeSteps = 20
+time = 500 * ms
+rmp = -65
+dt = time / timeSteps
+
+# therapeutic parameters
+reducFactors = [.2, .5, .7, .9]
+props = [.2, .5, .7]
+treatDelay = 0
+
+# tau parameters
+lethalThreshold = .65
+initialFrac = .2
+initialConc = .1
+
+# initial simulation parameters
+number = 5
+start = 9
+stimDelay = 1
+weight = 0.08
+tau = 2
+
+total = 12
+progress = 0
+
+for reducFactor in reducFactors:
+    for prop in props:
+
+        def showStruc():
+            ps = h.PlotShape(True)
+            ps.show(0)
+            input()
 
 
-def getSpikeCounts(matrix, spikeTimeVecs, tstart, tstop):
-    """returns a matrix shape=(i,j) of spike counts for cell i firing to cell j in the interval (tstart, tstop)
-    will also copy firing times of cell a to cell b to all of the cells cell a fires too, because neuron
-    will only keep track of one"""
-    n = len(matrix)
-    firingMat = np.zeros_like(matrix)
-    for fro in range(n):
-        for to in range(n):
-            spikeList = list(spikeTimeVecs[fro][to])
-            # if h.t <=199:
-            # print(spikeList, h.t, tstart, tstop)
-            spikeListInInterval = [el for el in spikeList if tstart < el < tstop]
-            if len(spikeListInInterval) > 0:
-                firingMat[fro] = np.array(matrix[fro]) * len(spikeListInInterval)
-    return firingMat
+        def getSpikeCounts(matrix, spikeTimeVecs, tstart, tstop, verbose=False):
+            """returns a matrix shape=(i,j) of spike counts for cell i firing to cell j in the interval (tstart, tstop)
+            will also copy firing times of cell a to cell b to all of the cells cell a fires too, because neuron
+            will only keep track of one"""
+            n = len(matrix)
+            firingMat = np.zeros_like(matrix)
+            for fro in range(n):
+                for to in range(n):
+                    spikeList = list(spikeTimeVecs[fro][to])
+                    if h.t >= 194 and verbose:
+                        print(spikeList, h.t, tstart, tstop, f"cell {fro} to {to}")
+                    spikeListInInterval = [el for el in spikeList if tstart < el < tstop]
+                    if len(spikeListInInterval) > 0:
+                        firingMat[fro] = np.array(matrix[fro]) * len(spikeListInInterval)
+            return firingMat
 
 
-def seedTau(cells, initial_frac=0.1, intial_conc=0.1):
-    n = len(cells)
-    toInfect = int(initial_frac * n)
-    infectedCount = 0
+        def seedTau(cells, initial_frac=0.1, intial_conc=0.1):
+            n = len(cells)
+            toInfect = int(initial_frac * n)
+            infectedCount = 0
 
-    while infectedCount < toInfect:
-        rIndex = int(rand.random() * n)
-        if cells[rIndex].tauC == 0:
-            cells[rIndex].tauC = intial_conc
-            infectedCount += 1
-
-
-def propogateTau(cells, FRMatrix, verbose=False):
-    for i, cell in enumerate(cells):
-        incidentCells = np.array([ind for ind, x in enumerate(FRMatrix[:, i]) if x > 0])
-        incidentFRs = np.array([x for x in FRMatrix[:, i] if x > 0])
-        incidentPercentFiringAc = 0 if np.sum(incidentFRs) == 0 else incidentFRs / np.sum(incidentFRs)
-        incidentTaus = np.zeros(len(incidentCells))
-        for ind, i2 in enumerate(incidentCells):
-            incidentTaus[ind] = cells[i2].tauC
-        dTau = np.sum(incidentPercentFiringAc * incidentTaus)
-        if verbose:
-            # print(FRMatrix)
-            print(f"{incidentTaus}\t{incidentFRs}\t{dTau} for cell {i} which currently has tau = {cell.tauC}")
-        cell.tauC = sigmoid(cell.tauC + dTau) if dTau > 0 else cell.tauC
+            while infectedCount < toInfect:
+                rIndex = int(rand.random() * n)
+                if cells[rIndex].tauC == 0:
+                    cells[rIndex].tauC = intial_conc
+                    infectedCount += 1
 
 
-def sigmoid(x):
-    return expit(x)
+        def propogateTau(cells, FRMatrix, verbose=False):
+            for i, cell in enumerate(cells):
+                if cell.isAlive:
+                    incidentCells = np.array([ind for ind, x in enumerate(FRMatrix[:, i]) if x > 0])
+                    incidentFRs = np.array([x for x in FRMatrix[:, i] if x > 0])
+                    incidentPercentFiringAc = 0 if np.sum(incidentFRs) == 0 else incidentFRs / np.sum(incidentFRs)
+                    incidentTaus = np.zeros(len(incidentCells))
+                    for ind, i2 in enumerate(incidentCells):
+                        incidentTaus[ind] = cells[i2].tauC
+                    dTau = np.sum(incidentPercentFiringAc * incidentTaus)
+                    if verbose:
+                        print(
+                            f"{incidentTaus}\t{incidentFRs}\t{dTau} for cell {i} which currently has tau = {cell.tauC} Time = {h.t}")
+                    cell.tauC = sigmoid(cell.tauC + dTau) if dTau > 0 else cell.tauC
 
 
-net = network.small_world(20, 2, 0)
-# net = network.scale_free(10, 2)
-# network.visualize_network(net)
-# plt.show()
-matrix = nx.to_numpy_array(net)
-print(f"Network has {np.sum(matrix)} total connections")
-cells = createCells(matrix, r=600)
-netcons = connectCells(matrix, cells, verbose=False)
-# showStruc()
-n = len(matrix)
+        def sigmoid(x):
+            return expit(x)
 
 
-def killCellsAbove(threshold, verbose=False):
-    """kills cells with a Tau concentration above threshold"""
-    killCount = 0
-    for i, cell in enumerate(cells):
-        # print(f"cell {i} has tauC = {cell.tauC}, time = {h.t}")
-        if cell.tauC > threshold and cell.isAlive:
-            cell.kill()
-            killCount += 1
-            if verbose:
-                print(f"killed cell {i} at {h.t}")
-    return killCount
+        matrix = network.small_world(nn, kn, pn)
+        # network.visualize_matrix(matrix)
+        # plt.show()
+        print(f"Network has {np.sum(matrix)} total connections")
+        cells = createCells(matrix, r=600)
+        netcons = connectCells(matrix, cells, inhFrac=inhFrac, verbose=False)
+        # showStruc()
+        n = len(matrix)
 
 
-def deliverTherapeutic(TauReducFactor, prop, delay, verbose=False):
-    """reduced tau concentration by TauReducFactor (percent) in prop percent of infected cells"""
-    if h.t > delay:
-        threshold = 0.0001  # concentration that is close enough to zero
-        n = len(cells)
-        numInfectedCells = len([cell for cell in cells if cell.tauC > threshold and cell.isAlive])
-        numCellsToAffect = prop * numInfectedCells
-        numAffected = 0
-
-        while numAffected < numCellsToAffect:
-            rIndex = int(rand.random() * n)
-            # if it was > 0, would go on forever
-            if cells[rIndex].tauC > threshold and cells[rIndex].isAlive:  # TODO affect dead cells?
-                cells[rIndex].tauC -= TauReducFactor * cells[rIndex].tauC
-                numAffected += 1
-                if verbose:
-                    print(f"cell {rIndex}'s tau concentration reduced to {cells[rIndex].tauC}")
+        def killCellsAbove(threshold, verbose=False):
+            """kills cells with a Tau concentration above threshold"""
+            killCount = 0
+            for i, cell in enumerate(cells):
+                # print(f"cell {i} has tauC = {cell.tauC}, time = {h.t}")
+                if cell.tauC > threshold and cell.isAlive:
+                    cell.kill()
+                    killCount += 1
+                    if verbose:
+                        print(f"killed cell {i} at {h.t}")
+            return killCount
 
 
-def initialStim(number, start, delay, weight, tau):
-    stim = h.NetStim()
-    syn = h.ExpSyn(cells[n // 2].dend(0.8)) if type(cells[n // 2].dend) is not list else h.ExpSyn(
-        cells[n // 2].dend[0](0.8))
-    stim.number = number
-    stim.start = start
+        def deliverTherapeutic(TauReducFactor, prop, delay, verbose=False):
+            """reduced tau concentration by TauReducFactor (percent) in prop percent of infected cells"""
+            if h.t >= delay:
+                threshold = 0.001  # concentration that is close enough to zero
+                infectedCellsInds = [i for i, cell in enumerate(cells) if cell.tauC > threshold and cell.isAlive]
+                random.shuffle(infectedCellsInds)
+                cellsToAffect = infectedCellsInds[0:int(prop * len(infectedCellsInds))]
+                # print(cellsToAffect, len(cellsToAffect))
 
-    ncstim = h.NetCon(stim, syn)
-    ncstim.delay = delay * ms
-    ncstim.weight[0] = weight
-
-    syn.tau = tau * ms
-
-    return ncstim, stim, syn
-
-
-def runSim(Vm, tstop, timesteps):
-    """runs the simulation"""
-    h.finitialize(Vm * mV)
-    dt = tstop/timesteps
-    events = list()
-    for ts in range(timesteps):
-        events.append(h.CVode().event(ts * dt, step))
-    h.continuerun(tstop * ms)
+                for ind in cellsToAffect:
+                    # if it was > 0, would go on forever
+                    if cells[ind].tauC > threshold and cells[ind].isAlive:  # TODO affect dead cells?
+                        if verbose:
+                            print(f"cell {ind}'s tau concentration reduced from {cells[ind].tauC} to ", end="")
+                        cells[ind].tauC -= TauReducFactor * cells[ind].tauC
+                        if verbose:
+                            print(f"{cells[ind].tauC} at {h.t}")
 
 
-ncstim, stim, syn = initialStim(5, 9, 1, 0.08, 2 * ms)
+        def initialStim(number, start, delay, weight, tau):
+            stim = h.NetStim()
+            syn = h.ExpSyn(cells[n // 2].dend(0.8)) if type(cells[n // 2].dend) is not list else h.ExpSyn(
+                cells[n // 2].dend[0](0.8))
+            stim.number = number
+            stim.start = start
+
+            ncstim = h.NetCon(stim, syn)
+            ncstim.delay = delay * ms
+            ncstim.weight[0] = weight
+
+            syn.tau = tau * ms
+
+            return ncstim, stim, syn
 
 
-def recordV(cellNumber, region="soma"):
-    """records the voltage of cellNumber"""
-    if region == "soma":
-        return h.Vector().record(
-            cells[cellNumber].soma(0.5)._ref_v if type(cells[cellNumber].soma) is not list
-            else cells[cellNumber].soma[0](0.5)._ref_v)
-    else:
-        return h.Vector().record(
-            cells[cellNumber].dend(0.5)._ref_v if type(cells[cellNumber].dend) is not list
-            else cells[cellNumber].dend[0](0.5)._ref_v)
+        def runSim(Vm, tstop, timesteps):
+            """runs the simulation"""
+            h.finitialize(Vm * mV)
+            dt = tstop / timesteps
+            events = list()
+            for ts in range(timesteps):
+                events.append(h.CVode().event(ts * dt, step))
+            h.continuerun(tstop * ms)
 
 
-v = recordV(0, region="soma")
-t = h.Vector().record(h._ref_t)
-
-spikeTimeMat_Unexpanded = np.zeros((n, n), dtype=object)
-for fro in range(n):
-    for to in range(n):
-        spikeTimeMat_Unexpanded[fro, to] = h.Vector()
-        if netcons[fro, to] != 0:
-            netcons[fro, to].record(spikeTimeMat_Unexpanded[fro, to])
-
-seedTau(cells, initial_frac=.2, intial_conc=.1)
-tauMatrix = []
-numDeadCells = []
+        ncstim, stim, syn = initialStim(number, start, stimDelay, weight, tau)
 
 
-def step(t=0, dt=5, verbose=False):
-    """performs one timestep"""
-    # h(f'StepBy={dt}')  # ms
-    # h('walltime = startsw()')
-    # h.xopen("midbalfcn.hoc")
-    # h('objref fihw')
-    # h('fihw = new FInitializeHandler(2, "midbal()")')
-    spikeTimes = getSpikeCounts(matrix, spikeTimeMat_Unexpanded, h.t - dt, h.t)
-    if verbose:
-        print(f"spikes in interval = {np.sum(spikeTimes)}")
-    propogateTau(cells, spikeTimes)
-    taus = np.array([cell.tauC for cell in cells]).reshape(n, 1)
-    global tauMatrix
-    global numDeadCells
-    if len(tauMatrix) == 0:
-        tauMatrix = taus
-    else:
-        tauMatrix = np.hstack((tauMatrix, taus))
-    killed = killCellsAbove(.8, verbose=False)
-    if len(numDeadCells) == 0:
-        numDeadCells.append(killed)
-    else:
-        numDeadCells.append(killed+numDeadCells[-1])
-    deliverTherapeutic(.2, .2, 30, verbose=False)
-
-
-timeSteps = 40
-time = 400 * ms
-runSim(-65, time, timeSteps)
-dt = time/timeSteps
-
-
-def plotTauPrev():
-    """plots the tau prevalence over time (total tau concentration/number of cells, for each timestamp)"""
-    plt.figure()
-    plt.title("Average Cellular Tau over Time")
-    plt.xlabel('Time (ms)')
-    plt.ylabel('Average Cellular Tau (0-1)')
-    tauPrev = np.sum(tauMatrix, axis=0) / n
-    plt.plot(np.arange(0, timeSteps, 1)*dt, tauPrev)
-    plt.show()
-
-
-plotTauPrev()
-
-
-def plotSpikeTimes(plotType):
-    """plots the spike times of all cells in the simulation
-    :param plotType (string): raster or scatter"""
-    fig, ax = plt.subplots()
-    plt.title("Spike Times of Cells in Network")
-    plt.xlabel('Time (ms)')
-    plt.ylabel('Cell Number')
-
-    for fro in range(n):
-        for i, spike_times_vec in enumerate(spikeTimeMat_Unexpanded[fro]):
-            X = list(spike_times_vec)
-            if len(X) == 0:
-                continue
-            if plotType == "raster":
-                plt.vlines(X, fro - .5, fro + .5)
-            elif plotType == "scatter":
-                Y = fro * np.ones_like(X)
-                ax.scatter(X, Y, color='k')
+        def recordV(cellNumber, region="soma"):
+            """records the voltage of cellNumber"""
+            if region == "soma":
+                return h.Vector().record(
+                    cells[cellNumber].soma(0.5)._ref_v if type(cells[cellNumber].soma) is not list
+                    else cells[cellNumber].soma[0](0.5)._ref_v)
             else:
+                return h.Vector().record(
+                    cells[cellNumber].dend(0.5)._ref_v if type(cells[cellNumber].dend) is not list
+                    else cells[cellNumber].dend[0](0.5)._ref_v)
+
+
+        v = recordV(n//2, region="soma")
+        t = h.Vector().record(h._ref_t)
+
+        spikeTimeMat_Unexpanded = np.zeros((n, n), dtype=object)
+        for fro in range(n):
+            for to in range(n):
+                spikeTimeMat_Unexpanded[fro, to] = h.Vector()
+                if netcons[fro, to] != 0:
+                    netcons[fro, to].record(spikeTimeMat_Unexpanded[fro, to])
+
+        seedTau(cells, initial_frac=initialFrac, intial_conc=initialConc)
+        tauMatrix = []
+        numDeadCells = []
+
+
+        def step(dt=5, verbose=False):
+            """performs one timestep"""
+            spikeTimes = getSpikeCounts(matrix, spikeTimeMat_Unexpanded, h.t - dt, h.t, verbose=False)
+            if verbose:
+                print(f"spikes in interval = {np.sum(spikeTimes)}")
+
+            propogateTau(cells, spikeTimes, verbose=False)  # PAY ATTENTION TO ORDER
+            deliverTherapeutic(reducFactor, prop, treatDelay, verbose=False)
+
+            killed = killCellsAbove(lethalThreshold, verbose=False)
+            global numDeadCells
+            if len(numDeadCells) == 0:
+                numDeadCells.append(killed)
+            else:
+                numDeadCells.append(killed + numDeadCells[-1])
+
+            global tauMatrix
+            taus = np.array([cell.tauC for cell in cells]).reshape(n, 1)
+            if len(tauMatrix) == 0:
+                tauMatrix = taus
+            else:
+                tauMatrix = np.hstack((tauMatrix, taus))
+
+
+        runSim(rmp, time, timeSteps)
+
+
+        def plotTauPrev(folder, plot=True, save=False):
+            """plots the tau prevalence over time (total tau concentration/number of cells, for each timestamp)"""
+            plt.figure()
+            plt.title("Average Cellular Tau over Time")
+            plt.xlabel('Time (ms)')
+            plt.ylabel('Average Cellular Tau (0-1)')
+            tauPrev = np.sum(tauMatrix, axis=0) / n
+            plt.plot(np.arange(0, timeSteps, 1) * dt, tauPrev)
+            if (save):
+                plt.savefig(f"Results/{folder}/tauPrevalence.png")
+            if (plot):
+                plt.show()
+
+
+        def plotSpikeTimes(plotType, folder, plot=True, save=False):
+            """plots the spike times of all cells in the simulation
+            :param plotType (string): raster or scatter"""
+            fig, ax = plt.subplots()
+            plt.title("Spike Times of Cells in Network")
+            plt.xlabel('Time (ms)')
+            plt.ylabel('Cell Number')
+
+            for fro in range(n):
+                for i, spike_times_vec in enumerate(spikeTimeMat_Unexpanded[fro]):
+                    X = list(spike_times_vec)
+                    if len(X) == 0:
+                        continue
+                    if plotType == "raster":
+                        plt.vlines(X, fro - .5, fro + .5)
+                    elif plotType == "scatter":
+                        Y = fro * np.ones_like(X)
+                        ax.scatter(X, Y, color='k')
+                    else:
+                        return
+            if save:
+                plt.savefig(f"Results/{folder}/spikeTimePlot_{plotType}.png")
+            if not plot:
                 return
-    plt.show()
+            plt.show()
 
 
-def plotMemPotential(cellNumber):
-    """plots the membrane potential of cellNumber over time"""
-    plt.figure()
-    plt.title(f"Membrane Potential of Cell {cellNumber} Over Time")
-    plt.xlabel('Time (ms)')
-    plt.ylabel('Membrane Potential (mV)')
-    plt.plot(t, v)
-    plt.show()
-
-def plotCellSurvival(survivalList):
-    """plots number of cells alive at each timestep
-    :param survivalList: list of cells alive at each timestep"""
-    plt.figure()
-    plt.title(f"Number of Surviving Cells over Time")
-    plt.xlabel('Time (ms)')
-    plt.ylabel('Surviving Cells')
-    plt.plot(np.arange(0, timeSteps, 1)*dt, survivalList)
-    plt.show()
+        def plotMemPotential(cellNumber, folder, plot=True, save=False):
+            """plots the membrane potential of cellNumber over time"""
+            plt.figure()
+            plt.title(f"Membrane Potential of Cell {cellNumber} Over Time")
+            plt.xlabel('Time (ms)')
+            plt.ylabel('Membrane Potential (mV)')
+            plt.plot(t, v)
+            if (save):
+                plt.savefig(f"Results/{folder}/MembranePotentialCell{cellNumber}.png")
+            if (plot):
+                plt.show()
 
 
-plotSpikeTimes("raster")
-plotMemPotential(0)
+        def plotCellSurvival(survivalList, folder, plot=True, save=False):
+            """plots number of cells alive at each timestep
+            :param survivalList: list of cells alive at each timestep"""
+            plt.figure()
+            plt.title(f"Number of Surviving Cells over Time")
+            plt.xlabel('Time (ms)')
+            plt.ylabel('Surviving Cells')
+            plt.plot(np.arange(0, timeSteps, 1) * dt, survivalList)
+            if (save):
+                plt.savefig(f"Results/{folder}/cellSurvival.png")
+            if (plot):
+                plt.show()
 
-survivalList = n - np.array(numDeadCells)
-plotCellSurvival(survivalList)
+
+        if onTheBooks:
+            foldername = f"n{nn}k{kn}p{pn}rf{reducFactor}tp{prop}td{treatDelay}le{lethalThreshold}if{inhFrac}t{time}ts{timeSteps}"
+            os.makedirs(f"Results/{foldername}/")
+            plotTauPrev(foldername, plot=False, save=True)
+            plotMemPotential(n//2, foldername, plot=False, save=True)
+
+            survivalList = n - np.array(numDeadCells)
+            plotCellSurvival(survivalList, foldername, plot=False, save=True)
+
+            with open("Results/params.txt", "a") as f:
+                f.write(f"n = {nn}\tk = {kn}\tp = {pn}\tinh frac = {inhFrac}\t")
+                f.write(
+                    f"STIM num = {number}\tstart = {start}\tdelay = {stimDelay}\tweight = {weight}\ttau(time const) = {tau}\t")
+                f.write(f"SEED fraction = {initialFrac}\tinitial conc = {initialConc}\t")
+                f.write(
+                    f"STEP: reduc factor = {reducFactor}\ttreated prop = {prop}\ttreatment delay = {treatDelay}\tlethal = {lethalThreshold}\t")
+                f.write(f"TIME = {time}\ttime steps = {timeSteps}\trmp = {rmp}\tdt = {dt}\n")
+        else:
+            plotTauPrev(None, plot=True, save=False)
+            plotMemPotential(n//2, None, plot=True, save=False)
+            plotSpikeTimes("raster", None, plot=True, save=False)
+
+            survivalList = n - np.array(numDeadCells)
+            plotCellSurvival(survivalList, None, plot=True, save=False)
+
+        progress += 1
+        print(f"{progress / total * 100}% done")
