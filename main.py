@@ -4,12 +4,10 @@ import numpy as np
 from neuron import h
 from neuron.units import ms, mV
 import matplotlib.pyplot as plt
-import pprint
 import os
 from scipy.special import expit
 import network
 import random as rand
-import networkx as nx
 
 h.load_file("stdrun.hoc")
 h.load_file("import3d.hoc")
@@ -148,11 +146,11 @@ def connectCells(matrix, cells, inhFrac=0.0, verbose=False):
     return ncs
 
 
-onTheBooks = True
+onTheBooks = False
 
 # network parameters
-nn = 1000
-kn = 20
+nn = 100
+kn = 2
 pn = .05
 inhFrac = 0.15
 
@@ -163,12 +161,12 @@ rmp = -65
 dt = time / timeSteps
 
 # therapeutic parameters
-reducFactors = [.2, .5, .7, .9]
-props = [.2, .5, .7]
+reducFactors = [.99]
+props = [.97]
 treatDelay = 0
 
 # tau parameters
-lethalThreshold = .65
+lethalThreshold = .75
 initialFrac = .2
 initialConc = .1
 
@@ -179,7 +177,7 @@ stimDelay = 1
 weight = 0.08
 tau = 2
 
-total = 12
+total = 16
 progress = 0
 
 for reducFactor in reducFactors:
@@ -460,3 +458,4 @@ for reducFactor in reducFactors:
 
         progress += 1
         print(f"{progress / total * 100}% done")
+print(numDeadCells)
